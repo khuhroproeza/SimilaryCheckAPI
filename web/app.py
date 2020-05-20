@@ -1,54 +1,56 @@
 from flask import Flask, jsonify, request
-
-from flask_restful import Resource, Api
-
+from flask_restful import Api, Resource
 from pymongo import MongoClient
 import bcrypt
 import spacy
+
 app = Flask(__name__)
 api = Api(app)
 
 client = MongoClient("mongodb://db:27017")
 
-db = client.SimilartyDB
+db = client.SimilarityDB
 users = db["Users"]
 
+
 def UserExist(username):
-    if users.find({"Username":username}).count() == 0:
+    if users.find({"Username": username}).count() == 0:
         return False
     else:
         return True
 
+
 class Register(Resource):
     def post(self):
         postedData = request.get_json()
-
         username = postedData["username"]
         password = postedData["password"]
 
-        if UserExist(username):
+        if (UserExist(username)):
             retJson = {
                 "status": 301,
-                "message": "Invalid UserName"
+                "Message": "Invalid Username"
             }
             return jsonify(retJson)
 
-
         hashed_pw = bcrypt.hashpw(password.encode('utf8'), bcrypt.gensalt())
 
-        users.insert({
-            "Username": username,
-            "Password": hashed_pw,
-            "Token": 6
-        })
-
+        users.insert(
+            {
+                "Username": username,
+                "Password": hashed_pw,
+                "Tokens": 6
+            }
+        )
         retJson = {
             "status": 200,
-            "message": "You have successfully signed up to the API"
+            "Message": "You have successfully signed up to the API"
         }
+
         return jsonify(retJson)
 
-def verifyPw(username, password):
+
+def verifyPw(username, password=None):
     if not UserExist(username):
         return False
 
@@ -56,31 +58,34 @@ def verifyPw(username, password):
         "Username": username
     })[0]["Password"]
 
-    if bcrypt.hashed_pw(password.encode('utf8'), hashed_pw)==hashed_pw:
+    if bcrypt.hashpw(password.encode('utf8'), hashed_pw) == hashed_pw:
         return True
     else:
         return False
 
 
-def CountTokens(username):
+def countTokens(username):
     tokens = users.find({
-        "Username": username
+        "Username":username
     })[0]["Tokens"]
+
     return tokens
+
+
 
 class Detect(Resource):
     def post(self):
         postedData = request.get_json()
-
         username = postedData["username"]
         password = postedData["password"]
+
         text1 = postedData["text1"]
         text2 = postedData["text2"]
 
         if not UserExist(username):
             retJson = {
-                "status": 301,
-                "message": "Invalid User"
+                "status": "301",
+                "Message": "Invalid Username"
             }
             return jsonify(retJson)
 
@@ -89,49 +94,45 @@ class Detect(Resource):
         if not correct_pw:
             retJson = {
                 "status": 302,
-                "message": "Invalid Password"
+                "Message": "Invalid Username"
             }
             return jsonify(retJson)
 
-        num_tokens = CountTokens(username)
+        num_tokens = countTokens(username)
 
         if num_tokens <= 0:
             retJson = {
                 "status": 303,
-                "message": "Out of Tokens, Please refill."
+                "message": "Tokens 0, please refill"
             }
             return jsonify(retJson)
 
-
-
-        #Calculate the edit distance
         nlp = spacy.load('en_core_web_sm')
 
         text1 = nlp(text1)
         text2 = nlp(text2)
 
-        #Ratio is a number between 0 and 1 the closer to 1, the more similar to text
-
+        # Defines a number between 0 and 1. 1 being similary 0 being not similar.
         ratio = text1.similarity(text2)
 
         retJson = {
-            "stutus": 200,
-            "similarity": ratio,
-            "message": "Similary score calculated successfully"
+            "status": 200,
+            "Similarity": ratio,
+            "Message": "Similarity score calculated Successfully"
         }
 
-        current_tokens = CountTokens(username)
+        current_tokens = countTokens(username)
 
+        newtokens = current_tokens - 1
+        if newtokens < 0:
+            newtokens = 0
         users.update({
-            "Username": username,
-        },{
+            "Username": username
+        }, {
             "$set": {
-            "Tokens": current_tokens -1
+                "Tokens": newtokens
             }
         })
-
-
-
         return jsonify(retJson)
 
 class Refill(Resource):
@@ -139,38 +140,34 @@ class Refill(Resource):
         postedData = request.get_json()
         username = postedData["username"]
         password = postedData["admin_pw"]
-        refill_amount = postedData["refill"]
 
+        refill_amount = postedData["refill"]
         if not UserExist(username):
             retJson = {
                 "status": 301,
-                "message": "Invalid username"
-
+                "Message": "Invalid username"
             }
-
             return jsonify(retJson)
-
         correct_pw = "abc123"
         if not password == correct_pw:
             retJson = {
                 "status": 304,
-                "message": "Invalid Admin Password"
+                "Message": "Invalid Admin Password"
             }
             return jsonify(retJson)
 
-        current_tokens = CountTokens(username)
-
+        #current_tokens = countTokens(username)
         users.update({
             "Username": username
         },{
-            "$set":{
-                "Tokens": refill_amount+current_tokens
+            "$set": {
+                "Tokens": refill_amount #+current_tokens
             }
         })
 
         retJson = {
             "status": 200,
-            "message": "refilled successfully"
+            "Message": "Refilled Successfully"
         }
         return jsonify(retJson)
 
@@ -179,5 +176,5 @@ api.add_resource(Register, '/register')
 api.add_resource(Detect, '/detect')
 api.add_resource(Refill, '/refill')
 
-if __name__=="__main__":
+if __name__ == "__main__":
     app.run(host='0.0.0.0')
